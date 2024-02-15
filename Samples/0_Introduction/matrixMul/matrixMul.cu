@@ -139,7 +139,8 @@ void ConstantInit(float *data, int size, float val) {
  */
 int MatrixMultiply(int argc, char **argv,
                    int block_size, const dim3 &dimsA,
-                   const dim3 &dimsB) {
+                   const dim3 &dimsB, int nIter)
+{
   // Allocate host memory for matrices A and B
   unsigned int size_A = dimsA.x * dimsA.y;
   unsigned int mem_size_A = sizeof(float) * size_A;
@@ -209,8 +210,6 @@ int MatrixMultiply(int argc, char **argv,
   checkCudaErrors(cudaEventRecord(start, stream));
 
   // Execute the kernel
-  int nIter = 300;
-
   for (int j = 0; j < nIter; j++) {
     if (block_size == 16) {
       MatrixMulCUDA<16>
@@ -289,7 +288,6 @@ int MatrixMultiply(int argc, char **argv,
   }
 }
 
-
 /**
  * Program main
  */
@@ -301,6 +299,8 @@ int main(int argc, char **argv) {
     printf("Usage -device=n (n >= 0 for deviceID)\n");
     printf("      -wA=WidthA -hA=HeightA (Width x Height of Matrix A)\n");
     printf("      -wB=WidthB -hB=HeightB (Width x Height of Matrix B)\n");
+    printf("      -kernel-iterations=<num>:       Number of times the kernel tests should "
+           "be run [default is 100 iterations].\n");
     printf("  Note: Outer matrix dimensions of A & B matrices" \
            " must be equal.\n");
 
@@ -345,8 +345,15 @@ int main(int argc, char **argv) {
   printf("MatrixA(%d,%d), MatrixB(%d,%d)\n", dimsA.x, dimsA.y,
          dimsB.x, dimsB.y);
 
+  int nkIter = 100;
+  if (checkCmdLineFlag(argc, (const char **)argv, "kernel-iterations"))
+  {
+    nkIter = getCmdLineArgumentInt(argc, (const char **)argv, "kernel-iterations");
+  }
+  printf("[Kernel number of iterations: %d]\n", nkIter);
+
   checkCudaErrors(cudaProfilerStart());
-  int matrix_result = MatrixMultiply(argc, argv, block_size, dimsA, dimsB);
+  int matrix_result = MatrixMultiply(argc, argv, block_size, dimsA, dimsB, nkIter);
   checkCudaErrors(cudaProfilerStop());
 
   exit(matrix_result);

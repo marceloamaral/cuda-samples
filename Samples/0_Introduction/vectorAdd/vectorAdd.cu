@@ -46,10 +46,11 @@
  * number of elements numElements.
  */
 __global__ void vectorAdd(const float *A, const float *B, float *C,
-                          int numElements) {
+                          int numElements)
+{
   int i = blockDim.x * blockIdx.x + threadIdx.x;
-
-  if (i < numElements) {
+  if (i < numElements)
+  {
     C[i] = A[i] + B[i] + 0.0f;
   }
 }
@@ -57,15 +58,38 @@ __global__ void vectorAdd(const float *A, const float *B, float *C,
 /**
  * Host main routine
  */
-int main(void) {
+int main(int argc, char **argv)
+{
   // Error code to check return values for CUDA calls
   cudaError_t err = cudaSuccess;
 
+  if (checkCmdLineFlag(argc, (const char **)argv, "help") ||
+      checkCmdLineFlag(argc, (const char **)argv, "?"))
+  {
+    printf("Usage -device=n (n >= 0 for deviceID)\n");
+    printf("      -array-size=<num>               Numberof elements in array [default is 5000].\n");
+    printf("      -kernel-iterations=<num>:       Number of times the kernel tests should "
+      "be run in the gpu side [default is 100 iterations].\n");
+
+    exit(EXIT_SUCCESS);
+  }
+
   // Print the vector length to be used, and compute its size
   int numElements = 50000;
-  size_t size = numElements * sizeof(float);
-  printf("[Vector addition of %d elements]\n", numElements);
+  if (checkCmdLineFlag(argc, (const char **)argv, "array-size"))
+  {
+    numElements = getCmdLineArgumentInt(argc, (const char **)argv, "array-size");
+  }
+  printf("[Vector addition of %d elements in the array]\n", numElements);
 
+  int nkIter = 100;
+  if (checkCmdLineFlag(argc, (const char **)argv, "kernel-iterations"))
+  {
+    nkIter = getCmdLineArgumentInt(argc, (const char **)argv, "kernel-iterations");
+  }
+  printf("[Kernel number of iterations: %d]\n", nkIter);
+
+  size_t size = numElements * sizeof(float);
   // Allocate the host input vector A
   float *h_A = (float *)malloc(size);
 
@@ -140,71 +164,82 @@ int main(void) {
   }
 
   // Launch the Vector Add CUDA Kernel
-  int threadsPerBlock = 256;
+  int threadsPerBlock = 512;
+  // int threadsPerBlock = 256;
   int blocksPerGrid = (numElements + threadsPerBlock - 1) / threadsPerBlock;
-  printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid,
-         threadsPerBlock);
-  vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements);
-  err = cudaGetLastError();
+  printf("CUDA kernel launch with %d blocks of %d threads, %d times\n", blocksPerGrid,
+         threadsPerBlock, nIter);
 
-  if (err != cudaSuccess) {
-    fprintf(stderr, "Failed to launch vectorAdd kernel (error code %s)!\n",
-            cudaGetErrorString(err));
-    exit(EXIT_FAILURE);
-  }
-
-  // Copy the device result vector in device memory to the host result vector
-  // in host memory.
-  printf("Copy output data from the CUDA device to the host memory\n");
-  err = cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost);
-
-  if (err != cudaSuccess) {
-    fprintf(stderr,
-            "Failed to copy vector C from device to host (error code %s)!\n",
-            cudaGetErrorString(err));
-    exit(EXIT_FAILURE);
-  }
-
-  // Verify that the result vector is correct
-  for (int i = 0; i < numElements; ++i) {
-    if (fabs(h_A[i] + h_B[i] - h_C[i]) > 1e-5) {
-      fprintf(stderr, "Result verification failed at element %d!\n", i);
+  for (int i = 0; i < nkIter; ++i)
+  {
+    vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements);
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+      fprintf(stderr, "Failed to launch vectorAdd kernel (error code %s)!\n",
+              cudaGetErrorString(err));
       exit(EXIT_FAILURE);
     }
   }
 
-  printf("Test PASSED\n");
+    // Copy the device result vector in device memory to the host result vector
+    // in host memory.
+    printf("Copy output data from the CUDA device to the host memory\n");
+    err = cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost);
 
-  // Free device global memory
-  err = cudaFree(d_A);
+    if (err != cudaSuccess)
+    {
+      fprintf(stderr,
+              "Failed to copy vector C from device to host (error code %s)!\n",
+              cudaGetErrorString(err));
+      exit(EXIT_FAILURE);
+    }
 
-  if (err != cudaSuccess) {
-    fprintf(stderr, "Failed to free device vector A (error code %s)!\n",
-            cudaGetErrorString(err));
-    exit(EXIT_FAILURE);
+    // Verify that the result vector is correct
+    for (int i = 0; i < numElements; ++i)
+    {
+      if (fabs(h_A[i] + h_B[i] - h_C[i]) > 1e-5)
+      {
+        fprintf(stderr, "Result verification failed at element %d!\n", i);
+        exit(EXIT_FAILURE);
+      }
+    }
+
+    printf("Test PASSED\n");
+
+    // Free device global memory
+    err = cudaFree(d_A);
+
+    if (err != cudaSuccess)
+    {
+      fprintf(stderr, "Failed to free device vector A (error code %s)!\n",
+              cudaGetErrorString(err));
+      exit(EXIT_FAILURE);
+    }
+
+    err = cudaFree(d_B);
+
+    if (err != cudaSuccess)
+    {
+      fprintf(stderr, "Failed to free device vector B (error code %s)!\n",
+              cudaGetErrorString(err));
+      exit(EXIT_FAILURE);
+    }
+
+    err = cudaFree(d_C);
+
+    if (err != cudaSuccess)
+    {
+      fprintf(stderr, "Failed to free device vector C (error code %s)!\n",
+              cudaGetErrorString(err));
+      exit(EXIT_FAILURE);
+    }
+
+    // Free host memory
+    free(h_A);
+    free(h_B);
+    free(h_C);
+
+    printf("Done\n");
+    return 0;
   }
-
-  err = cudaFree(d_B);
-
-  if (err != cudaSuccess) {
-    fprintf(stderr, "Failed to free device vector B (error code %s)!\n",
-            cudaGetErrorString(err));
-    exit(EXIT_FAILURE);
-  }
-
-  err = cudaFree(d_C);
-
-  if (err != cudaSuccess) {
-    fprintf(stderr, "Failed to free device vector C (error code %s)!\n",
-            cudaGetErrorString(err));
-    exit(EXIT_FAILURE);
-  }
-
-  // Free host memory
-  free(h_A);
-  free(h_B);
-  free(h_C);
-
-  printf("Done\n");
-  return 0;
-}
